@@ -10,7 +10,6 @@ reg[11:0] register;
 initial begin
     register = 12'b0;
 end
-assign out = {4'b0000, register};
 
 always @(negedge clk) begin
     if (load) begin

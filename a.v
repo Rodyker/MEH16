@@ -17,7 +17,6 @@ localparam A_NOT = 5;
 localparam A_COM = 6;
 
 reg[15:0] a;
-assign out = a;
 reg flag_c_out;
 
 initial begin
@@ -53,5 +52,7 @@ always @(negedge clk) begin
         endcase
     end
 end
+
+assign out = a;
 
 endmodule

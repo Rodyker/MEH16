@@ -92,8 +92,6 @@ always @(negedge clk) begin
     end
 end
 
-assign out = ctrl_word;
-
 initial begin
     stage <= 0;
 end
@@ -256,5 +254,7 @@ always @(*) begin
         end
     endcase
 end
+
+assign out = ctrl_word;
 
 endmodule

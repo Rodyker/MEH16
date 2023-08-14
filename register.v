@@ -7,7 +7,7 @@ module register(
 
 reg[15:0] register;
 
-always @(clk) begin
+always @(negedge clk) begin
     if (load) begin
         register <= bus;
     end

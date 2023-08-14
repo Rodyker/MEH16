@@ -41,6 +41,7 @@ reg[15:0] ram[0:255];
 integer i;
 initial begin
     mar = 12'b0;
+
 	for (i = 0; i < 256; i = i + 1) begin
 		ram[i] = 16'b0000000000000000;
 	end

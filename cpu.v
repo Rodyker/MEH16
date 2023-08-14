@@ -1,3 +1,153 @@
+module top(
+    input CLK,
+    output RED1,
+    output RED2,
+    output RED3,
+    output RED4,
+    output GREEN
+);
+
+assign {RED1, RED2, RED3, RED4, GREEN} = b_out[4:0];
+
+reg[15:0] bus;
+always @(*) begin
+    if (a_en) begin
+        bus = a_out;
+    end else if (b_en) begin
+        bus = b_out;
+    end else if (alu_en) begin
+        bus = alu_out;
+    end else if (ram_en) begin
+        bus = ram_out;
+    end else if (pc_en) begin
+        bus = pc_out;
+    end else if (ir_en) begin
+        bus = ir_out;
+    end else begin
+        bus = 16'b0;
+    end
+end
+
+wire clk;
+clock clock(
+    .clk_in(CLK),
+    .clk_out(clk)
+);
+
+localparam FLAG_C = 1;
+wire[2:0] alu_op;
+wire alu_en;
+wire[15:0] alu_out;
+wire alu_c_flag;
+alu alu(
+    .clk(clk),
+    .a(a_out),
+    .b(b_out),
+    .alu_op(alu_op),
+    .out(alu_out),
+    .flag_c_in(flags[FLAG_C]),
+    .flag_c_out(alu_c_flag)
+);
+
+wire[2:0] flags;
+flags flags(
+    .clk(clk),
+    .a_out(a_out),
+    .alu_op(alu_op != 0),
+    .a_load(a_load),
+    .a_op(a_op != 0),
+    .alu_c_flag(alu_c_flag),
+    .a_c_flag(a_c_flag),
+    .out(flags)
+);
+
+wire ram_en;
+wire mar_load;
+wire ram_load;
+wire[15:0] ram_out;
+ram ram(
+    .clk(clk),
+    .ram_en(ram_en),
+    .mar_load(mar_load),
+    .ram_load(ram_load),
+    .bus(bus),
+    .out(ram_out)
+);
+
+controller controller(
+    .clk(clk),
+    .ir_opcode(ir_out[15:12]),
+    .ram_opcode(ram_out[15:12]),
+    .ram_arg(ram_out[11:0]),
+    .flags(flags),
+    .alu_op(alu_op),
+    .a_op(a_op),
+    .out({
+        alu_en,
+        ram_en,
+        mar_load,
+        ram_load,
+        a_en,
+        a_load,
+        b_en,
+        b_load,
+        pc_en,
+        pc_load,
+        pc_inc,
+        ir_en,
+        ir_load
+    })
+);
+
+wire[2:0] a_op;
+wire a_en;
+wire a_load;
+wire[15:0] a_out;
+wire a_c_flag;
+a reg_a(
+    .clk(clk),
+    .load(a_load),
+    .a_op(a_op),
+    .bus(bus),
+    .out(a_out),
+    .flag_c_in(flags[FLAG_C]),
+    .flag_c_out(a_c_flag)
+);
+
+wire b_en;
+wire b_load;
+wire[15:0] b_out;
+register reg_b(
+    .clk(clk),
+    .load(b_load),
+    .bus(bus),
+    .out(b_out)
+);
+
+wire ir_en;
+wire ir_load;
+wire[15:0] ir_out;
+register ir(
+    .clk(clk),
+    .load(ir_load),
+    .bus(bus),
+    .out(ir_out)
+);
+
+wire pc_en;
+wire pc_load;
+wire pc_inc;
+wire[15:0] pc_out;
+pc pc(
+    .clk(clk),
+    .load(pc_load),
+    .inc(pc_inc),
+    .bus(bus[11:0]),
+    .out(pc_out)
+);
+
+endmodule
+
 module clock(
     input clk_in,
     output clk_out
@@ -6,128 +156,106 @@ module clock(
 reg [22:0] counter;
 reg [5:0] delay;
 reg clk_out;
+
 always @(posedge clk_in) begin
   if (delay < 63) begin
     delay <= delay + 1;
   end else begin
     counter <= counter + 1;
-    clk_out <= counter[22];
+    clk_out <= counter[18];//change number to change clock speed
   end
 end
 
 endmodule
-module alu(
-    input clk,
-    input[15:0] a,
-    input[15:0] b,
-    input[2:0] alu_op,
-    input flag_c_in,
-    output[15:0] out,
-    output flag_c_out
+
+module ram(
+	input clk,
+	input ram_en,
+	input mar_load,
+	input ram_load,
+	input[15:0] bus,
+	output[15:0] out
 );
 
-localparam ALU_ADD = 0;
-localparam ALU_ADDC = 1;
-localparam ALU_SUB = 2;
-localparam ALU_SUBB = 3;
-localparam ALU_MOD = 4;
-localparam ALU_AND = 5;
-localparam ALU_OR = 6;
-localparam ALU_XOR = 7;
+/*
+NOARG 	0000
+LOADA 	0001
+LOADB 	0010
+STORE 	0011
+ADD 	0100
+ADDC 	0101
+SUB 	0110
+SUBB 	0111
+MOD 	1000
+AND 	1001
+OR 		1010
+XOR 	1011
+JMP 	1100
+JMPZ 	1101
+JMPC 	1110
+JMPS 	1111
 
-reg flag_c_out;
+NOOP 	000000000000
+INC 	000000000001
+DEC 	000000000010
+SHL 	000000000011
+SHR 	000000000100
+NOT 	000000000101
+COM 	000000000110
+MOVBA 	000000000111
+*/
+
+reg[11:0] mar;
+reg[15:0] ram[0:255];
+
+integer i;
+initial begin
+    mar = 12'b0;
+
+	for (i = 0; i < 256; i = i + 1) begin
+		ram[i] = 16'b0000000000000000;
+	end
+
+    //test program with fibonacci
+    ram[0]  = 16'b0001000000001101;//load mem1
+	ram[1]  = 16'b0100000000001110;//add mem2
+	ram[2]  = 16'b0011000000001111;//store mem3
+	ram[3]  = 16'b0001000000000000;//load 0
+	ram[4]  = 16'b0000000000000001;//inc
+	ram[5]  = 16'b0011000000000000;//store 0
+	ram[6]  = 16'b0001000000000001;//load 1
+	ram[7]  = 16'b0000000000000001;//inc
+	ram[8]  = 16'b0011000000000001;//store
+    ram[9]  = 16'b0001000000000010;//load 2
+    ram[10] = 16'b0000000000000001;//inc
+    ram[11] = 16'b0011000000000010;//store 2
+    ram[12] = 16'b1100000000000000;//jump 0
+    ram[13] = 16'b0000000000000001;
+    ram[14] = 16'b0000000000000001;
+
+    //test for conditional jumps
+/*
+    ram[0] = 16'b0000000000000001;//INC
+    ram[1] = 16'b0000000000000100;//SHR
+    ram[2] = 16'b1110000000000100;//JMPC 4
+    ram[3] = 16'b1100000000000011;//JMP 3
+    ram[4] = 16'b1100000000000100;//JMP 4*/
+
+end
+
 reg[15:0] out;
 always @(posedge clk) begin
-    flag_c_out = flag_c_in;
-    case (alu_op)
-        ALU_ADD: begin
-            {flag_c_out, out} = a + b;
-        end
-        ALU_ADDC: begin
-            {flag_c_out, out} = a + b + flag_c_in;
-        end
-        ALU_SUB: begin
-            {flag_c_out, out} = a - b;
-        end
-        ALU_SUBB: begin
-            {flag_c_out, out} = a - b - flag_c_in;
-        end
-        ALU_MOD: begin
-            out = a % b;
-        end
-        ALU_AND: begin
-            out = a & b;
-        end
-        ALU_OR: begin
-            out = a | b;
-        end
-        ALU_XOR: begin
-            out = a ^ b;
-        end
-		default: begin
-			out = 0;
-		end
-    endcase
+	if (ram_en) begin
+		out <= ram[mar];
+	end else if (mar_load) begin
+		mar <= bus[11:0];
+	end else if (ram_load) begin
+		ram[mar] <= bus;
+	end
 end
 
 endmodule
-module a(
-    input clk,
-    input load,
-    input[2:0] a_op,
-    input[15:0] bus,
-    input flag_c_in,
-    output[15:0] out,
-    output flag_c_out
-);
 
-//a ops
-localparam A_INC = 1;
-localparam A_DEC = 2;
-localparam A_SHL = 3;
-localparam A_SHR = 4;
-localparam A_NOT = 5;
-localparam A_COM = 6;
-
-reg[15:0] a;
-assign out = a;
-reg flag_c_out;
-
-initial begin
-    a = 16'b0;
-end
-
-always @(negedge clk) begin
-    if (load) begin
-        a <= bus;
-    end else begin
-        flag_c_out = flag_c_in;
-        case (a_op)
-            A_INC: begin
-                {flag_c_out, a} = a + 1;
-            end
-            A_DEC: begin
-                {flag_c_out, a} = a - 1;
-            end
-            A_SHL: begin
-                flag_c_out = a[15];
-                a = a << 1;
-            end
-            A_SHR: begin
-                flag_c_out = a[0];
-                a = a >> 1;
-            end
-            A_NOT: begin
-                a = ~a;
-            end
-            A_COM: begin
-                a = ~a + 1;
-            end
-        endcase
-    end
-end
-
-endmodule
 module controller(
     input clk,
     input[3:0] ir_opcode,
@@ -221,8 +349,6 @@ always @(negedge clk) begin
         stage <= stage + 1;
     end
 end
-
-assign out = ctrl_word;
 
 initial begin
     stage <= 0;
@@ -387,8 +513,126 @@ always @(*) begin
     endcase
 end
 
+assign out = ctrl_word;
+
 endmodule
-module flag_merger(
+
+module alu(
+    input clk,
+    input[15:0] a,
+    input[15:0] b,
+    input[2:0] alu_op,
+    input flag_c_in,
+    output[15:0] out,
+    output flag_c_out
+);
+
+localparam ALU_ADD = 0;
+localparam ALU_ADDC = 1;
+localparam ALU_SUB = 2;
+localparam ALU_SUBB = 3;
+localparam ALU_MOD = 4;
+localparam ALU_AND = 5;
+localparam ALU_OR = 6;
+localparam ALU_XOR = 7;
+
+reg flag_c_out;
+reg[15:0] out;
+always @(posedge clk) begin
+    flag_c_out = flag_c_in;
+    case (alu_op)
+        ALU_ADD: begin
+            {flag_c_out, out} = a + b;
+        end
+        ALU_ADDC: begin
+            {flag_c_out, out} = a + b + flag_c_in;
+        end
+        ALU_SUB: begin
+            {flag_c_out, out} = a - b;
+        end
+        ALU_SUBB: begin
+            {flag_c_out, out} = a - b - flag_c_in;
+        end
+        ALU_MOD: begin
+            out = a % b;
+        end
+        ALU_AND: begin
+            out = a & b;
+        end
+        ALU_OR: begin
+            out = a | b;
+        end
+        ALU_XOR: begin
+            out = a ^ b;
+        end
+		default: begin
+			out = 0;
+		end
+    endcase
+end
+
+endmodule
+
+module a(
+    input clk,
+    input load,
+    input[2:0] a_op,
+    input[15:0] bus,
+    input flag_c_in,
+    output[15:0] out,
+    output flag_c_out
+);
+
+//a ops
+localparam A_INC = 1;
+localparam A_DEC = 2;
+localparam A_SHL = 3;
+localparam A_SHR = 4;
+localparam A_NOT = 5;
+localparam A_COM = 6;
+
+reg[15:0] a;
+reg flag_c_out;
+
+initial begin
+    a = 16'b0;
+end
+
+always @(negedge clk) begin
+    if (load) begin
+        a <= bus;
+    end else begin
+        flag_c_out = flag_c_in;
+        case (a_op)
+            A_INC: begin
+                {flag_c_out, a} = a + 1;
+            end
+            A_DEC: begin
+                {flag_c_out, a} = a - 1;
+            end
+            A_SHL: begin
+                flag_c_out = a[15];
+                a = a << 1;
+            end
+            A_SHR: begin
+                flag_c_out = a[0];
+                a = a >> 1;
+            end
+            A_NOT: begin
+                a = ~a;
+            end
+            A_COM: begin
+                a = ~a + 1;
+            end
+        endcase
+    end
+end
+
+assign out = a;
+
+endmodule
+
+module flags(
     input clk,
     input[15:0] a_out,
     input alu_op,
@@ -403,36 +647,25 @@ localparam FLAG_Z = 0;
 localparam FLAG_C = 1;
 localparam FLAG_S = 2;
 
+reg[2:0] flags;
+reg load_from_alu;
+reg load_from_a;
+
 initial begin
     flags = 3'b001;
-end
-
-reg[2:0] flags;
-assign out = flags;
-
-reg load_from_a;
-reg load_from_alu;
-
-initial begin
     load_from_a = 0;
     load_from_alu = 0;
 end
 
-always @(clk) begin
+always @(posedge clk) begin
     flags[FLAG_S] = a_out[15];
-
-    if (a_out == 0) begin
-        flags[FLAG_Z] = 1;
-    end else begin
-        flags[FLAG_Z] = 0;
-    end
+    flags[FLAG_Z] = (a_out == 0);
 
     if (alu_op) begin
         load_from_alu <= 1;
     end else if (a_op) begin
         load_from_a <= 1;
     end
-    
     if (load_from_alu) begin
         flags[FLAG_C] <= alu_c_flag;
         load_from_alu = 0;
@@ -442,7 +675,29 @@ always @(clk) begin
     end
 end
 
+assign out = flags;
+
 endmodule
+
+module register(
+    input clk,
+    input load,
+    input[15:0] bus,
+    output[15:0] out
+);
+
+reg[15:0] register;
+
+always @(negedge clk) begin
+    if (load) begin
+        register <= bus;
+    end
+end
+
+assign out = register;
+
+endmodule
+
 module pc(
     input clk,
     input load,
@@ -455,7 +710,6 @@ reg[11:0] register;
 initial begin
     register = 12'b0;
 end
-assign out = {4'b0000, register};
 
 always @(negedge clk) begin
     if (load) begin
@@ -466,264 +720,5 @@ always @(negedge clk) begin
 end
 
 assign out = {4'b0000, register};
-
-endmodule
-module ram(
-	input clk,
-	input ram_en,
-	input mar_load,
-	input ram_load,
-	input[15:0] bus,
-	output[15:0] out
-);
-
-/*
-NOARG 	0000
-LOADA 	0001
-LOADB 	0010
-STORE 	0011
-ADD 	0100
-ADDC 	0101
-SUB 	0110
-SUBB 	0111
-MOD 	1000
-AND 	1001
-OR 		1010
-XOR 	1011
-JMP 	1100
-JMPZ 	1101
-JMPC 	1110
-JMPS 	1111
-
-NOOP 	000000000000
-INC 	000000000001
-DEC 	000000000010
-SHL 	000000000011
-SHR 	000000000100
-NOT 	000000000101
-COM 	000000000110
-MOVBA 	000000000111
-*/
-
-reg[11:0] mar;
-reg[15:0] ram[0:255];
-
-integer i;
-initial begin
-    mar = 12'b0;
-	for (i = 0; i < 256; i = i + 1) begin
-		ram[i] = 16'b0000000000000000;
-	end
-
-    //test program with fibonacci
-    ram[0]  = 16'b0001000000001101;//load mem1
-	ram[1]  = 16'b0100000000001110;//add mem2
-	ram[2]  = 16'b0011000000001111;//store mem3
-	ram[3]  = 16'b0001000000000000;//load 0
-	ram[4]  = 16'b0000000000000001;//inc
-	ram[5]  = 16'b0011000000000000;//store 0
-	ram[6]  = 16'b0001000000000001;//load 1
-	ram[7]  = 16'b0000000000000001;//inc
-	ram[8]  = 16'b0011000000000001;//store
-    ram[9]  = 16'b0001000000000010;//load 2
-    ram[10] = 16'b0000000000000001;//inc
-    ram[11] = 16'b0011000000000010;//store 2
-    ram[12] = 16'b1100000000000000;//jump 0
-    ram[13] = 16'b0000000000000001;
-    ram[14] = 16'b0000000000000001;
-
-    //test for conditional jumps
-/*
-    ram[0] = 16'b0000000000000001;//INC
-    ram[1] = 16'b0000000000000100;//SHR
-    ram[2] = 16'b1110000000000100;//JMPC 4
-    ram[3] = 16'b1100000000000011;//JMP 3
-    ram[4] = 16'b1100000000000100;//JMP 4*/
-
-end
-
-reg[15:0] out;
-always @(posedge clk) begin
-	if (ram_en) begin
-		out <= ram[mar];
-	end else if (mar_load) begin
-		mar <= bus[11:0];
-	end else if (ram_load) begin
-		ram[mar] <= bus;
-	end
-end
-
-endmodule
-module register(
-    input clk,
-    input load,
-    input[15:0] bus,
-    output[15:0] out
-);
-
-reg[15:0] register;
-
-always @(clk) begin
-    if (load) begin
-        register <= bus;
-    end
-end
-
-assign out = register;
-
-endmodule
-module top(
-    input CLK,
-    output RED1,
-    output RED2,
-    output RED3,
-    output RED4,
-    output GREEN
-);  //inputs are from ICE40 stick
-
-assign {RED1, RED2, RED3, RED4, GREEN} = bus[4:0];
-
-wire clk;
-clock clock(
-    .clk_in(CLK),
-    .clk_out(clk)
-);
-
-//use when bypassing clock module in simulation
-//assign clk = CLK;
-
-reg[15:0] bus;
-always @(*) begin
-    if (a_en) begin
-        bus = a_out;
-    end else if (b_en) begin
-        bus = b_out;
-    end else if (alu_en) begin
-        bus = alu_out;
-    end else if (ram_en) begin
-        bus = ram_out;
-    end else if (pc_en) begin
-        bus = pc_out;
-    end else if (ir_en) begin
-        bus = ir_out;
-    end else begin
-        bus = 16'b0;
-    end
-end
-
-localparam FLAG_Z = 0;
-localparam FLAG_C = 1;
-localparam FLAG_S = 2;
-
-wire[2:0] alu_op;
-wire alu_en;
-wire[15:0] alu_out;
-wire alu_c_flag;
-alu alu(
-    .clk(clk),
-    .a(a_out),
-    .b(b_out),
-    .alu_op(alu_op),
-    .out(alu_out),
-    .flag_c_in(flags[FLAG_C]),
-    .flag_c_out(alu_c_flag)
-);
-
-wire[2:0] flags;
-flag_merger flag_merger(
-    .clk(clk),
-    .a_out(a_out),
-    .alu_op(alu_op != 0),
-    .a_load(a_load),
-    .a_op(a_op != 0),
-    .alu_c_flag(alu_c_flag),
-    .a_c_flag(a_c_flag),
-    .out(flags)
-);
-
-wire ram_en;
-wire mar_load;
-wire ram_load;
-wire[15:0] ram_out;
-ram ram(
-    .clk(clk),
-    .ram_en(ram_en),
-    .mar_load(mar_load),
-    .ram_load(ram_load),
-    .bus(bus),
-    .out(ram_out)
-);
-
-wire[2:0] a_op;
-wire a_en;
-wire a_load;
-wire[15:0] a_out;
-wire a_c_flag;
-a reg_a(
-    .clk(clk),
-    .load(a_load),
-    .a_op(a_op),
-    .bus(bus),
-    .out(a_out),
-    .flag_c_in(flags[FLAG_C]),
-    .flag_c_out(a_c_flag)
-);
-
-wire b_en;
-wire b_load;
-wire[15:0] b_out;
-register reg_b(
-    .clk(clk),
-    .load(b_load),
-    .bus(bus),
-    .out(b_out)
-);
-
-wire pc_en;
-wire pc_load;
-wire pc_inc;
-wire[15:0] pc_out;
-pc pc(
-    .clk(clk),
-    .load(pc_load),
-    .inc(pc_inc),
-    .bus(bus[11:0]),
-    .out(pc_out)
-);
-
-wire ir_en;
-wire ir_load;
-wire[15:0] ir_out;
-register ir(
-    .clk(clk),
-    .load(ir_load),
-    .bus(bus),
-    .out(ir_out)
-);
-
-controller controller(
-    .clk(clk),
-    .ir_opcode(ir_out[15:12]),
-    .ram_opcode(ram_out[15:12]),
-    .ram_arg(ram_out[11:0]),
-    .flags(flags),
-    .alu_op(alu_op),
-    .a_op(a_op),
-    .out({
-        alu_en,
-        ram_en,
-        mar_load,
-        ram_load,
-        a_en,
-        a_load,
-        b_en,
-        b_load,
-        pc_en,
-        pc_load,
-        pc_inc,
-        ir_en,
-        ir_load
-    })
-);
 
 endmodule
