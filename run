@@ -1,0 +1,15 @@
+set -e
+
+build () {
+    yosys -p "synth_ice40 -top top -json example.json" cpu.v
+    nextpnr-ice40 --hx1k --timing-allow-fail --package tq144 --json example.json --pcf example.pcf --asc example.asc
+    icepack example.asc example.bin
+    iceprog example.bin
+}
+
+build 2>&1 | tee run.log
+
+#set -e
+#yosys -p "synth_ice40 -top top -json example.json" *.v
+#nextpnr-ice40 --up5k --json example.json --pcf example.pcf --asc example.asc
+#icepack example.asc example.bin

@@ -1,3 +1,4 @@
+/*
 module top(
     input CLK,
     output RED1,
@@ -8,6 +9,10 @@ module top(
 );
 
 assign {RED1, RED2, RED3, RED4, GREEN} = b_out[4:0];
+*/
+
+module cpu(input CLK);
+assign clk = CLK;
 
 reg[15:0] bus;
 always @(*) begin
@@ -17,7 +22,7 @@ always @(*) begin
         bus = b_out;
     end else if (alu_en) begin
         bus = alu_out;
-    end else if (ram_en) begin
+    end else if (ram_en | stack_en) begin
         bus = ram_out;
     end else if (pc_en) begin
         bus = pc_out;
@@ -27,13 +32,13 @@ always @(*) begin
         bus = 16'b0;
     end
 end
-
+/*
 wire clk;
 clock clock(
     .clk_in(CLK),
     .clk_out(clk)
 );
-
+*/
 localparam FLAG_C = 1;
 wire[2:0] alu_op;
 wire alu_en;
@@ -50,7 +55,7 @@ alu alu(
 );
 
 wire[2:0] flags;
-flags flags(
+flag_mux flag_mux(
     .clk(clk),
     .a_out(a_out),
     .alu_op(alu_op != 0),
@@ -64,12 +69,18 @@ flags flags(
 wire ram_en;
 wire mar_load;
 wire ram_load;
+wire stack_load;
+wire stack_en;
 wire[15:0] ram_out;
 ram ram(
     .clk(clk),
     .ram_en(ram_en),
     .mar_load(mar_load),
     .ram_load(ram_load),
+    .stack_load(stack_load),
+    .stack_en(stack_en),
+    .ir_arg(ir_out[9:0]),
+    .sp_out(sp_out),
     .bus(bus),
     .out(ram_out)
 );
@@ -79,10 +90,14 @@ controller controller(
     .ir_opcode(ir_out[15:12]),
     .ram_opcode(ram_out[15:12]),
     .ram_arg(ram_out[11:0]),
+    .stack_opcode(ir_out[11:10]),
     .flags(flags),
     .alu_op(alu_op),
     .a_op(a_op),
     .out({
+        stack_load,
+        stack_en,
+        sp_add,
         alu_en,
         ram_en,
         mar_load,
@@ -146,6 +161,16 @@ pc pc(
     .out(pc_out)
 );
 
+wire sp_add;
+wire[15:0] sp_out;
+sp sp(
+    .clk(clk),
+    .stack_load(stack_load),
+    .sp_add(sp_add),
+    .ram_arg(ram_out[9:0]),
+    .out(sp_out)
+);
+
 endmodule
 
 module clock(
@@ -162,7 +187,7 @@ always @(posedge clk_in) begin
     delay <= delay + 1;
   end else begin
     counter <= counter + 1;
-    clk_out <= counter[18];//change number to change clock speed
+    clk_out <= counter[1];//change number to change clock speed
   end
 end
 
@@ -173,75 +198,100 @@ module ram(
 	input ram_en,
 	input mar_load,
 	input ram_load,
+    input stack_load,
+    input stack_en,
+    input[9:0] ir_arg,
+    input[15:0] sp_out,
 	input[15:0] bus,
 	output[15:0] out
 );
 
 /*
-NOARG 	0000
-LOADA 	0001
-LOADB 	0010
-STORE 	0011
-ADD 	0100
-ADDC 	0101
-SUB 	0110
-SUBB 	0111
-MOD 	1000
-AND 	1001
-OR 		1010
-XOR 	1011
-JMP 	1100
-JMPZ 	1101
-JMPC 	1110
-JMPS 	1111
+NOARG 	0000ffffffffffff
+LOADA 	0001ffffffffffff
+STORE 	0010ffffffffffff
+ADD 	0011ffffffffffff
+ADDC 	0100ffffffffffff
+SUB 	0101ffffffffffff
+SUBB 	0110ffffffffffff
+MOD 	0111ffffffffffff
+AND 	1000ffffffffffff
+OR 		1001ffffffffffff
+XOR 	1010ffffffffffff
+JMP 	1011ffffffffffff
+JMPZ 	1100ffffffffffff
+JMPC 	1101ffffffffffff
+JMPS 	1110ffffffffffff
+CALL 	1111ffffffffffff
 
-NOOP 	000000000000
-INC 	000000000001
-DEC 	000000000010
-SHL 	000000000011
-SHR 	000000000100
-NOT 	000000000101
-COM 	000000000110
-MOVBA 	000000000111
+LDSTA   000001ffffffffff
+POP     000010ffffffffff
+RET     000011ffffffffff
+
+NOOP 	0000000000000000
+INC 	0000000000000001
+DEC 	0000000000000010
+SHL 	0000000000000011
+SHR 	0000000000000100
+NOT 	0000000000000101
+COM 	0000000000000110
+PUSH 	0000000000000111
+
 */
 
 reg[11:0] mar;
-reg[15:0] ram[0:255];
+reg[15:0] ram[0:12'b111111111111];
 
 integer i;
 initial begin
     mar = 12'b0;
 
-	for (i = 0; i < 256; i = i + 1) begin
+	for (i = 0; i < 13'b1000000000000; i = i + 1) begin
 		ram[i] = 16'b0000000000000000;
 	end
-
-    //test program with fibonacci
+    /*
     ram[0]  = 16'b0001000000001101;//load mem1
-	ram[1]  = 16'b0100000000001110;//add mem2
-	ram[2]  = 16'b0011000000001111;//store mem3
-	ram[3]  = 16'b0001000000000000;//load 0
-	ram[4]  = 16'b0000000000000001;//inc
-	ram[5]  = 16'b0011000000000000;//store 0
-	ram[6]  = 16'b0001000000000001;//load 1
-	ram[7]  = 16'b0000000000000001;//inc
-	ram[8]  = 16'b0011000000000001;//store
+    ram[1]  = 16'b0011000000001110;//add mem2
+    ram[2]  = 16'b0010000000001111;//store mem3
+    ram[3]  = 16'b0001000000000000;//load 0
+    ram[4]  = 16'b0000000000000001;//inc
+    ram[5]  = 16'b0010000000000000;//store 0
+    ram[6]  = 16'b0001000000000001;//load 1
+    ram[7]  = 16'b0000000000000001;//inc
+    ram[8]  = 16'b0010000000000001;//store
     ram[9]  = 16'b0001000000000010;//load 2
     ram[10] = 16'b0000000000000001;//inc
-    ram[11] = 16'b0011000000000010;//store 2
-    ram[12] = 16'b1100000000000000;//jump 0
+    ram[11] = 16'b0010000000000010;//store 2
+    ram[12] = 16'b1011000000000000;//jump 0
     ram[13] = 16'b0000000000000001;
     ram[14] = 16'b0000000000000001;
-
-    //test for conditional jumps
-/*
-    ram[0] = 16'b0000000000000001;//INC
-    ram[1] = 16'b0000000000000100;//SHR
-    ram[2] = 16'b1110000000000100;//JMPC 4
-    ram[3] = 16'b1100000000000011;//JMP 3
-    ram[4] = 16'b1100000000000100;//JMP 4*/
+    */
+    /*
+    ram[0] = 16'b1111000000000010;//call 2
+    ram[1] = 16'b1011000000000000;//jump 0
+    ram[2] = 16'b0000000000000001;//inc
+    ram[3] = 16'b0000110000000000;//ret 0
+    */
+    /*
+    ram[0] = 16'b0000000000000001;//inc
+    ram[1] = 16'b0000000000000111;//push
+    ram[2] = 16'b0000000000000010;//dec
+    ram[3] = 16'b0000100000000000;//pop 0
+    */
+    /*
+    ram[0] = 16'b0000000000000001;//inc
+    ram[1] = 16'b0000000000000111;//push
+    ram[2] = 16'b0000000000000001;//inc
+    ram[3] = 16'b0000000000000111;//push
+    ram[4] = 16'b0000100000000000;//pop 0
+    ram[5] = 16'b0000100000000000;//pop 0
+    */
+    
 
 end
+
+wire[16:0] top;
+assign top = ram[sp_out];
 
 reg[15:0] out;
 always @(posedge clk) begin
@@ -251,7 +301,11 @@ always @(posedge clk) begin
 		mar <= bus[11:0];
 	end else if (ram_load) begin
 		ram[mar] <= bus;
-	end
+    end else if (stack_load) begin
+        ram[sp_out] <= bus;
+    end else if (stack_en) begin
+        out <= ram[sp_out + ir_arg + 1];
+    end
 end
 
 endmodule
@@ -261,40 +315,49 @@ module controller(
     input[3:0] ir_opcode,
     input[3:0] ram_opcode,
     input[11:0] ram_arg,
+    input[1:0] stack_opcode,//from ir
     input[2:0] flags,
     output[2:0] alu_op,
     output[2:0] a_op,
-    output[12:0] out
+    output[15:0] out
 );
 
 //opcodes
 localparam OP_NOARG = 4'b0000;
 localparam OP_LOADA = 4'b0001;
-localparam OP_LOADB = 4'b0010;
-localparam OP_STORE = 4'b0011;
-localparam OP_ADD = 4'b0100;
-localparam OP_ADDC = 4'b0101;
-localparam OP_SUB = 4'b0110;
-localparam OP_SUBB = 4'b0111;
-localparam OP_MOD = 4'b1000;
-localparam OP_AND = 4'b1001;
-localparam OP_OR = 4'b1010;
-localparam OP_XOR = 4'b1011;
-localparam OP_JMP = 4'b1100;
-localparam OP_JMPZ = 4'b1101;
-localparam OP_JMPC = 4'b1110;
-localparam OP_JMPS = 4'b1111;
+localparam OP_STORE = 4'b0010;
+localparam OP_ADD   = 4'b0011;
+localparam OP_ADDC  = 4'b0100;
+localparam OP_SUB   = 4'b0101;
+localparam OP_SUBB  = 4'b0110;
+localparam OP_MOD   = 4'b0111;
+localparam OP_AND   = 4'b1000;
+localparam OP_OR    = 4'b1001;
+localparam OP_XOR   = 4'b1010;
+localparam OP_JMP   = 4'b1011;
+localparam OP_JMPZ  = 4'b1100;
+localparam OP_JMPC  = 4'b1101;
+localparam OP_JMPS  = 4'b1110;
+localparam OP_CALL  = 4'b1111;
 
-localparam OP_NOOP = 12'b000000000000;
-localparam OP_INC = 12'b000000000001;
-localparam OP_DEC = 12'b000000000010;
-localparam OP_SHL = 12'b000000000011;
-localparam OP_SHR = 12'b000000000100;
-localparam OP_NOT = 12'b000000000101;
-localparam OP_COM = 12'b000000000110;
-localparam OP_MOVBA = 12'b000000000111;
+localparam OP_NOST  = 2'b00;
+localparam OP_LDSTA = 2'b01;
+localparam OP_POP   = 2'b10;
+localparam OP_RET   = 2'b11;
+
+localparam OP_NOOP  = 12'b000000000000;
+localparam OP_INC   = 12'b000000000001;
+localparam OP_DEC   = 12'b000000000010;
+localparam OP_SHL   = 12'b000000000011;
+localparam OP_SHR   = 12'b000000000100;
+localparam OP_NOT   = 12'b000000000101;
+localparam OP_COM   = 12'b000000000110;
+localparam OP_PUSH  = 12'b000000000111;
 
 //signals
+localparam SIG_STACK_LOAD = 15;
+localparam SIG_STACK_EN =   14;
+localparam SIG_SP_ADD =     13;
 localparam SIG_ALU_EN =     12;
 localparam SIG_RAM_EN =     11;
 localparam SIG_MAR_LOAD =   10;
@@ -334,13 +397,17 @@ localparam FLAG_S = 2;
 
 
 reg[2:0] stage;
-reg[12:0] ctrl_word;
+reg[15:0] ctrl_word;
 reg[2:0] alu_op;
 reg[2:0] a_op;
 reg stage_rst;
 wire[3:0] ir_opcode;
 wire[3:0] ram_opcode;
 wire[11:0] ram_arg;
+wire[1:0] stack_opcode;
+wire[1:0] ram_stack_opcode;
+
+assign ram_stack_opcode = ram_arg[11:10];
 
 always @(negedge clk) begin
     if (stage_rst) begin
@@ -370,25 +437,33 @@ always @(*) begin
             case (ram_opcode)
                 OP_NOARG: begin
                     ctrl_word[SIG_PC_INC] = 1;
-                    stage_rst = 1;
                     case (ram_arg)
+                        OP_NOOP: begin
+                            stage_rst = 1;
+                        end
                         OP_INC: begin
                             a_op = A_INC;
+                            stage_rst = 1;
                         end
                         OP_DEC: begin
                             a_op = A_DEC;
+                            stage_rst = 1;
                         end
                         OP_SHL: begin
                             a_op = A_SHL;
+                            stage_rst = 1;
                         end
                         OP_SHR: begin
                             a_op = A_SHR;
+                            stage_rst = 1;
                         end
                         OP_NOT: begin
                             a_op = A_NOT;
+                            stage_rst = 1;
                         end
                         OP_COM: begin
                             a_op = A_COM;
+                            stage_rst = 1;
                         end
                     endcase
                 end
@@ -419,20 +494,43 @@ always @(*) begin
                         ctrl_word[SIG_PC_INC] = 1;
                     end
                     stage_rst = 1;
-                end  
+                end
                 default: begin
                     ctrl_word[SIG_PC_INC] = 1;
                 end      
             endcase
         end
         2: begin
-            if (ir_opcode == OP_NOARG) begin
-                ctrl_word[SIG_B_EN] = 1;
-                ctrl_word[SIG_A_LOAD] = 1;
+            if (ram_opcode == OP_CALL) begin
+                ctrl_word[SIG_RAM_EN] = 1;
+                ctrl_word[SIG_STACK_LOAD] = 1;
+                ctrl_word[SIG_PC_LOAD] = 1;
                 stage_rst = 1;
-            end else begin
+            end else if (ram_opcode != 0) begin
                 ctrl_word[SIG_IR_EN] = 1;
                 ctrl_word[SIG_MAR_LOAD] = 1;
+            end else begin
+                stage_rst = 1;
+                case (stack_opcode)
+                    OP_NOST: begin
+                        ctrl_word[SIG_A_EN] = 1;
+                        ctrl_word[SIG_STACK_LOAD] = 1;
+                    end
+                    OP_LDSTA: begin
+                        ctrl_word[SIG_STACK_EN] = 1;
+                        ctrl_word[SIG_A_LOAD] = 1;
+                    end
+                    OP_POP: begin
+                        ctrl_word[SIG_STACK_EN] = 1;
+                        ctrl_word[SIG_A_LOAD] = 1;
+                        ctrl_word[SIG_SP_ADD] = 1;
+                    end
+                    OP_RET: begin
+                        ctrl_word[SIG_STACK_EN] = 1;
+                        ctrl_word[SIG_PC_LOAD] = 1;
+                        ctrl_word[SIG_SP_ADD] = 1;
+                    end
+                endcase
             end
         end
         3: begin
@@ -440,11 +538,6 @@ always @(*) begin
                 OP_LOADA: begin
                     ctrl_word[SIG_RAM_EN] = 1;
                     ctrl_word[SIG_A_LOAD] = 1;
-                    stage_rst = 1;
-                end
-                OP_LOADB: begin
-                    ctrl_word[SIG_RAM_EN] = 1;
-                    ctrl_word[SIG_B_LOAD] = 1;
                     stage_rst = 1;
                 end
                 OP_STORE: begin
@@ -632,7 +725,7 @@ assign out = a;
 
 endmodule
 
-module flags(
+module flag_mux(
     input clk,
     input[15:0] a_out,
     input alu_op,
@@ -716,6 +809,32 @@ always @(negedge clk) begin
         register <= bus;
     end else if (inc) begin
         register <= register + 1;
+    end
+end
+
+assign out = {4'b0000, register};
+
+endmodule
+
+module sp(
+    input clk,
+    input stack_load,
+    input sp_add,
+    input[9:0] ram_arg,
+    output[15:0] out
+);
+
+reg[11:0] register;
+
+initial begin
+    register <= 12'b111111111111;
+end
+
+always @(posedge clk) begin
+    if (stack_load) begin
+        register <= register - 1;
+    end else if (sp_add) begin
+        register <= register + ram_arg + 1;
     end
 end
 

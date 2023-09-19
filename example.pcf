@@ -1,0 +1,6 @@
+set_io CLK 21
+set_io RED1 99
+set_io RED2 98
+set_io RED3 97
+set_io RED4 96
+set_io GREEN 95
