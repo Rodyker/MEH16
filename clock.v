@@ -12,7 +12,7 @@ always @(posedge clk_in) begin
     delay <= delay + 1;
   end else begin
     counter <= counter + 1;
-    clk_out <= counter[18];//change number to change clock speed
+    clk_out <= counter[0];//change number to change clock speed
   end
 end
 

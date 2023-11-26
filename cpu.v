@@ -1,20 +1,31 @@
+//used for loading onto FPGA
 
 module top(
     input CLK,
-    output RED1,
-    output RED2,
-    output RED3,
-    output RED4,
-    output GREEN,
+    output LED1,
+    output LED2,
+    output LED3,
+    output LED4,
+    output LED5,
+    output LED6,
+    output LED7,
+    output LED8,
+    output LED9,
+    output LED10,
     input IN1,
     input IN2,
     input IN3,
     input IN4,
+    input IN5,
+    input IN6,
+    input IN7,
+    input IN8,
+    input IN9,
+    input IN10
 );
-assign {RED1, RED2, RED3, RED4} = out_out[3:0];
-assign GREEN = ~IN1;
+assign {LED10, LED8, LED6, LED4, LED2, LED9, LED7, LED5, LED3, LED1} = out_out[9:0];
 
-assign in[3:0] = ~{IN4, IN3, IN2, IN1};
+assign in[9:0] = ~{IN10, IN8, IN6, IN4, IN2, IN9, IN7, IN5, IN3, IN1};
 
 wire clk;
 clock clock(
@@ -22,6 +33,7 @@ clock clock(
     .clk_out(clk)
 );
 
+//used for testbench
 /*
 module cpu(input CLK, input[15:0] IN);
 assign clk = CLK;
@@ -35,7 +47,7 @@ reg[15:0] bus;
 always @(*) begin
     if (a_en) begin
         bus = a_out;
-    end else if (ram_en | stack_en) begin
+    end else if (ram_en) begin
         bus = ram_out;
     end else if (mar_en) begin
         bus = {4'b0, mar_out};
@@ -51,14 +63,14 @@ end
 wire ram_en;
 wire ram_load;
 wire stack_load;
-wire stack_en;
+wire mar_stack;
 wire[15:0] ram_out;
 ram ram(
     .clk(clk),
     .ram_en(ram_en),
     .ram_load(ram_load),
     .stack_load(stack_load),
-    .stack_en(stack_en),
+    .mar_stack(mar_stack),
     .mar(mar_out),
     .bus(bus),
     .out(ram_out)
@@ -110,7 +122,7 @@ controller controller(
         mar_inc,
         pc_mar_load,
         stack_load,
-        stack_en,
+        mar_stack,
         sp_add,
         ram_en,
         mar_load,
@@ -144,7 +156,7 @@ a reg_a(
 wire ir_en;
 wire ir_load;
 wire[15:0] ir_out;
-register ir(
+ir ir(
     .clk(clk),
     .load(ir_load),
     .bus(bus),
@@ -174,7 +186,7 @@ sp sp(
     .sp_add(sp_add),
     .ram_arg(ram_out[9:0]),
     .out(sp_out),
-    .reset(reset)
+    .ir_reset(ir_out[3:0] == 4'b1111)
 );
 
 wire out_set;
@@ -221,7 +233,7 @@ module ram(
 	input ram_en,
 	input ram_load,
     input stack_load,
-    input stack_en,
+    input mar_stack,
     input[11:0] mar,
     input[15:0] sp_out,
 	input[15:0] bus,
@@ -229,6 +241,7 @@ module ram(
 );
 
 /*
+
 0001MMMMMMMMMMMM	LDW
 0010MMMMMMMMMMMM	STW
 0011MMMMMMMMMMMM	ADD
@@ -283,105 +296,14 @@ B: bit in register
 
 reg[15:0] ram[0:12'b111111111111];
 
-/*
 integer i;
 initial begin
-	for (i = 0; i < 13'b1000000000000; i = i + 1) begin
-		ram[i] = 16'b0000000000000000;
-	end
-    /*
-    ram[0]  = 16'b0001000000001101;//load mem1
-    ram[1]  = 16'b0011000000001110;//add mem2
-    ram[2]  = 16'b0010000000001111;//store mem3
-    ram[3]  = 16'b0001000000000000;//load 0
-    ram[4]  = 16'b0000000000000001;//inc
-    ram[5]  = 16'b0010000000000000;//store 0
-    ram[6]  = 16'b0001000000000001;//load 1
-    ram[7]  = 16'b0000000000000001;//inc
-    ram[8]  = 16'b0010000000000001;//store
-    ram[9]  = 16'b0001000000000010;//load 2
-    ram[10] = 16'b0000000000000001;//inc
-    ram[11] = 16'b0010000000000010;//store 2
-    ram[12] = 16'b1011000000000000;//jump 0
-    ram[13] = 16'b0000000000000001;
-    ram[14] = 16'b0000000000000001;
-    */
-    /*
-    ram[0] = 16'b0000000000000000;//nop
-    ram[1] = 16'b1111000000000011;//call 3
-    ram[2] = 16'b0000000000000010;//dec
-    ram[3] = 16'b0000000000000001;//inc
-    ram[4] = 16'b0000110000000000;//ret 1
-    */
-    /*
-    ram[0] = 16'b0000000000000001;//inc
-    ram[1] = 16'b0000000000001110;//push
-    ram[2] = 16'b0000000000000010;//dec
-    ram[3] = 16'b0000100000000000;//pop 0
-    */
-    /*
-    ram[0] = 16'b0000000000000001;//inc
-    ram[1] = 16'b0000000000001110;//push
-    ram[2] = 16'b0000000000000001;//inc
-    ram[3] = 16'b0000000000001110;//push
-    ram[4] = 16'b0000100000000000;//pop 0
-    ram[5] = 16'b0000100000000000;//pop 0
-    */
-    /*
-    ram[0] = 16'b0000000000000001;//inc
-    ram[1] = 16'b0010000000000010;//store 2
-    */
-    /*
-    ram[0] = 16'b0000000000000001;//inc
-    ram[1] = 16'b0000000000000100;//rtr
-    ram[2] = 16'b1101000000000101;//jmpc 5
-    */
-    /*
-    ram[0] = 16'b0000000000011111;//bit work set 15
-    ram[1] = 16'b0000000000111111;//bit work jump 15
-    ram[2] = 16'b0000000000000001;//inc
-    ram[3] = 16'b0000000000000010;//dec
-    */
-
-    //ram[0] = 16'b0000000001101111;//jump if in[15] == 1
-    /*
-    ram[0] = 16'b0000000000000001;//inc
-    ram[1] = 16'b0000000001110010;//shift left 2 places
-    */
-    /*
-    ram[0] = 16'b0001000000001111;//load 15
-    ram[1] = 16'b0000000000000111;//load pointer
-
-    ram[15] = 16'b0000000000010000;
-    ram[16] = 16'b0000000011111111;
-    */
-    /*
-    ram[0] = 16'b0000000000000001;//inc
-    ram[1] = 16'b0000000000001001;//mwo
-    */
-    //ram[0] = 16'b0000000000001010;//move in to work
-    /*
-    ram[0] = 16'b0000000000000001;//inc
-    ram[1] = 16'b0000000000001011;//clw
-    */
-
-
-/*
-    out = ram[0];
-end
-*/
-integer i;
-initial begin
-	for (i = 25; i < 13'b100000000000; i = i + 1) begin
-		ram[i] <= 16'b0000000000000000;
-	end
 	$readmemb("program.bin", ram);
-    //out = ram[0];
 end
 
 reg[15:0] out;
 always @(posedge clk) begin
-    if (ram_en | stack_en) begin
+    if (ram_en) begin
 		out <= ram[mar];
 	end if (ram_load) begin
 		ram[mar] <= bus;
@@ -399,7 +321,7 @@ module mar(
     input jump,
     input pc_mar_load,
     input mar_a_load,
-    input stack_en,
+    input mar_stack,
     input[15:0] sp_out,
     input[9:0] ir_arg,
     input[11:0] a_out,
@@ -418,7 +340,7 @@ end
 always @(negedge clk) begin
     if (reset) begin
         register = 12'b0;
-    end else if (stack_en) begin
+    end else if (mar_stack) begin
         register <= sp_out + ir_arg + 1;
     end else if (load) begin
         register <= bus;
@@ -508,7 +430,7 @@ localparam SIG_OUT_SET      = 15;
 localparam SIG_MAR_INC      = 14;
 localparam SIG_PC_MAR_LOAD  = 13;
 localparam SIG_STACK_LOAD   = 12;
-localparam SIG_STACK_EN     = 11;
+localparam SIG_MAR_STACK    = 11;
 localparam SIG_SP_ADD       = 10;
 localparam SIG_RAM_EN       = 9;
 localparam SIG_MAR_LOAD     = 8;
@@ -571,14 +493,10 @@ assign ir_type_stack = ir_out[11:10];
 assign ir_type_noarg = ir_out[3:0];
 
 initial begin
-    reset = 0;
     stage = 0;
 end
 
 always @(negedge clk) begin
-    if (reset == 1) begin
-        reset <= 0;
-    end
     if (stage_rst) begin
         stage <= 0;
     end else begin
@@ -590,11 +508,13 @@ always @(*) begin
     ctrl_word = 0;
     a_op = 0;
     stage_rst = 0;
+    reset = 0;
     case (stage)
         0: begin
             ctrl_word[SIG_RAM_EN] = 1;
             ctrl_word[SIG_IR_LOAD] = 1;
             ctrl_word[SIG_PC_INC] = 1;
+            ctrl_word[SIG_MAR_INC] = 1;
             case (ram_type_ram)
                 OP_JMP: begin
                     ctrl_word[SIG_PC_LOAD] = 1;
@@ -627,7 +547,6 @@ always @(*) begin
                 end
                 OP_NOARG: begin
                     if (ram_type_stack == OP_NOST) begin
-                        ctrl_word[SIG_MAR_INC] = 1;
                         case (ram_type_bit)
                             OP_BWS: begin
                                 a_op = A_SET;
@@ -721,8 +640,9 @@ always @(*) begin
                                 endcase
                             end
                         endcase
+
                     end else begin
-                        ctrl_word[SIG_MAR_LOAD] = 1;
+                        ctrl_word[SIG_MAR_STACK] = 1;
                     end
                 end
                 default: begin
@@ -782,16 +702,16 @@ always @(*) begin
                 OP_NOARG: begin
                     case (ir_type_stack)
                         OP_MSW: begin
-                            ctrl_word[SIG_STACK_EN] = 1;
+                            ctrl_word[SIG_RAM_EN] = 1;
                             ctrl_word[SIG_A_LOAD] = 1;
                         end
                         OP_POP: begin
-                            ctrl_word[SIG_STACK_EN] = 1;
+                            ctrl_word[SIG_RAM_EN] = 1;
                             ctrl_word[SIG_A_LOAD] = 1;
                             ctrl_word[SIG_SP_ADD] = 1;
                         end
                         OP_RET: begin
-                            ctrl_word[SIG_STACK_EN] = 1;
+                            ctrl_word[SIG_RAM_EN] = 1;
                             ctrl_word[SIG_PC_LOAD] = 1;
                             ctrl_word[SIG_MAR_LOAD] = 1;
                             ctrl_word[SIG_SP_ADD] = 1;
@@ -867,7 +787,6 @@ initial begin
     a = 16'b0;
     flags = 3'b0;
 end
-
 always @(negedge clk) begin
     if (reset) begin
         a = 16'b0;
@@ -880,7 +799,8 @@ always @(negedge clk) begin
                 {flags[FLAG_C], a} = a + 1;
             end
             A_DEC: begin
-                {flags[FLAG_C], a} = a - 1;
+                flags[FLAG_C] = (a < 1);
+                a = a - 1;
             end
             A_RTL: begin
                 flags[FLAG_C] = a[15];
@@ -903,10 +823,12 @@ always @(negedge clk) begin
                 {flags[FLAG_C], a} = a + bus + flags[FLAG_C];
             end
             A_SUB: begin
-                {flags[FLAG_C], a} = a - bus;
+                flags[FLAG_C] = (a < bus);
+                a = a - bus;
             end
-            A_SUB: begin
-                {flags[FLAG_C], a} = a - bus - flags[FLAG_C];
+            A_SBB: begin
+                flags[FLAG_C] = (a < (bus + flags[FLAG_C]));
+                a = a - bus - flags[FLAG_C];
             end
 //            A_MOD: begin
 //                a = a % bus;
@@ -927,7 +849,7 @@ always @(negedge clk) begin
                 a[bus[3:0]] = 0;
             end
             A_BSL: begin
-                {flags[FLAG_C], a} = a << bus[3:0];
+                {flags[FLAG_C], a} = a << bus[3:0];//TODO: modify carry flag to detect overflow when the lowest lost bit is 0
             end
             A_CLW: begin
                 a = 16'b0;
@@ -945,7 +867,7 @@ assign out = a;
 
 endmodule
 
-module register(
+module ir(
     input clk,
     input load,
     input[15:0] bus,
@@ -1009,7 +931,7 @@ module sp(
     input sp_add,
     input[9:0] ram_arg,
     output[15:0] out,
-    input reset
+    input ir_reset
 );
 
 reg[11:0] register;
@@ -1019,7 +941,7 @@ initial begin
 end
 
 always @(posedge clk) begin
-    if (reset) begin
+    if (ir_reset) begin
         register <= 12'b111111111111;
     end else if (stack_load) begin
         register <= register - 1;

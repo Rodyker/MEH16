@@ -1,87 +1,85 @@
 module ram(
 	input clk,
 	input ram_en,
-	input mar_load,
 	input ram_load,
+    input stack_load,
+    input mar_stack,
+    input[11:0] mar,
+    input[15:0] sp_out,
 	input[15:0] bus,
 	output[15:0] out
 );
 
 /*
-NOARG 	0000
-LOADA 	0001
-LOADB 	0010
-STORE 	0011
-ADD 	0100
-ADDC 	0101
-SUB 	0110
-SUBB 	0111
-MOD 	1000
-AND 	1001
-OR 		1010
-XOR 	1011
-JMP 	1100
-JMPZ 	1101
-JMPC 	1110
-JMPS 	1111
 
-NOOP 	000000000000
-INC 	000000000001
-DEC 	000000000010
-SHL 	000000000011
-SHR 	000000000100
-NOT 	000000000101
-COM 	000000000110
-MOVBA 	000000000111
+0001MMMMMMMMMMMM	LDW
+0010MMMMMMMMMMMM	STW
+0011MMMMMMMMMMMM	ADD
+0100MMMMMMMMMMMM	ADC
+0101MMMMMMMMMMMM	SUB
+0110MMMMMMMMMMMM	SBB
+0111MMMMMMMMMMMM	MOD
+1000MMMMMMMMMMMM	AND
+1001MMMMMMMMMMMM	OR
+1010MMMMMMMMMMMM	XOR
+1011MMMMMMMMMMMM	JMP
+1100MMMMMMMMMMMM	JPZ
+1101MMMMMMMMMMMM	JPC
+1110MMMMMMMMMMMM	JPS
+1111MMMMMMMMMMMM	CAL
+	
+ZZZZ01SSSSSSSSSS	MSW
+ZZZZ10SSSSSSSSSS	POP
+ZZZZ11SSSSSSSSSS	RET
+	
+ZZZZZZ___001BBBB	BWS
+ZZZZZZ___010BBBB	BWC
+ZZZZZZ___011BBBB	BWJ
+ZZZZZZ___100BBBB	BOS
+ZZZZZZ___101BBBB	BOC
+ZZZZZZ___110BBBB	BIJ
+ZZZZZZ___111BBBB	BSL
+	
+ZZZZZZZZZZZZ0000	NOP
+ZZZZZZZZZZZZ0001	INC
+ZZZZZZZZZZZZ0010	DEC
+ZZZZZZZZZZZZ0011	RTL
+ZZZZZZZZZZZZ0100	RTR
+ZZZZZZZZZZZZ0101	NOT
+ZZZZZZZZZZZZ0110	COM
+ZZZZZZZZZZZZ0111	LDP
+ZZZZZZZZZZZZ1000	STP
+ZZZZZZZZZZZZ1001	MWO
+ZZZZZZZZZZZZ1010	MIW
+ZZZZZZZZZZZZ1011	CLW
+ZZZZZZZZZZZZ1100	CLO
+ZZZZZZZZZZZZ1101	
+ZZZZZZZZZZZZ1110	PSH
+ZZZZZZZZZZZZ1111	RST
+
+Z: unused opcode space
+M: memory adress
+S: distance above SP
+B: bit in register
+
 */
 
-reg[11:0] mar;
-reg[15:0] ram[0:255];
+reg[15:0] ram[0:12'b111111111111];
 
 integer i;
 initial begin
-    mar = 12'b0;
-
-	for (i = 0; i < 256; i = i + 1) begin
-		ram[i] = 16'b0000000000000000;
-	end
-
-    //test program with fibonacci
-    ram[0]  = 16'b0001000000001101;//load mem1
-	ram[1]  = 16'b0100000000001110;//add mem2
-	ram[2]  = 16'b0011000000001111;//store mem3
-	ram[3]  = 16'b0001000000000000;//load 0
-	ram[4]  = 16'b0000000000000001;//inc
-	ram[5]  = 16'b0011000000000000;//store 0
-	ram[6]  = 16'b0001000000000001;//load 1
-	ram[7]  = 16'b0000000000000001;//inc
-	ram[8]  = 16'b0011000000000001;//store
-    ram[9]  = 16'b0001000000000010;//load 2
-    ram[10] = 16'b0000000000000001;//inc
-    ram[11] = 16'b0011000000000010;//store 2
-    ram[12] = 16'b1100000000000000;//jump 0
-    ram[13] = 16'b0000000000000001;
-    ram[14] = 16'b0000000000000001;
-
-    //test for conditional jumps
-/*
-    ram[0] = 16'b0000000000000001;//INC
-    ram[1] = 16'b0000000000000100;//SHR
-    ram[2] = 16'b1110000000000100;//JMPC 4
-    ram[3] = 16'b1100000000000011;//JMP 3
-    ram[4] = 16'b1100000000000100;//JMP 4*/
-
+	$readmemb("program.bin", ram);
 end
 
 reg[15:0] out;
 always @(posedge clk) begin
-	if (ram_en) begin
+    if (ram_en) begin
 		out <= ram[mar];
-	end else if (mar_load) begin
-		mar <= bus[11:0];
-	end else if (ram_load) begin
+	end if (ram_load) begin
 		ram[mar] <= bus;
-	end
+    end if (stack_load) begin
+        ram[sp_out] <= bus;
+    end
 end
 
 endmodule

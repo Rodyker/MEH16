@@ -21,9 +21,9 @@ funcs = {
     "JPC": "1101",
     "JPS": "1110",
     "CAL": "1111",
-    "MSW": "0000001",
-    "POP": "0000010",
-    "RET": "0000011",
+    "MSW": "000001",
+    "POP": "000010",
+    "RET": "000011",
     "BWS": "000000000001",
     "BWC": "000000000010",
     "BWJ": "000000000011",
@@ -74,6 +74,8 @@ for line in text:
                 out_word += bin(int(line[0], 16))[2:].zfill(16)
             out.append(out_word)
         
+for i in range(4096 - len(out)):
+    out.append("0000000000000000")
     
     
 #write out to file
