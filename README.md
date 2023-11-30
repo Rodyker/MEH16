@@ -1,4 +1,4 @@
-####Instructions used in program.s
+#### Instructions used in program.s
 
 LDW - loads from work register into ram
 STW - stores from ram into work register
