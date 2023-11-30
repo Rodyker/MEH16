@@ -1,5 +1,5 @@
-#### Instructions used in program.s
-
+### Instructions used in program.s
+``````
 LDW - loads from work register into ram
 STW - stores from ram into work register
 MWO - sets output to work register
@@ -22,3 +22,4 @@ JPZ - jumps if work register is set to 0000
 BWJ - jumps 2 memory locations ahead if the specified bit in the work register is set
 BIJ - jumps 2 memory locations if the specified bit in the input is set
 RST - reset
+``````
